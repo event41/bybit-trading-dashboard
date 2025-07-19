@@ -41,8 +41,8 @@ export function ApiStatus() {
   }
 
   const copyEnvTemplate = () => {
-    const template = `BYBIT_API_KEY=твой_api_ключ_здесь
-BYBIT_API_SECRET=твой_api_секрет_здесь
+    const template = `BYBIT_API_KEY=ваш_реальный_api_ключ_здесь
+BYBIT_API_SECRET=ваш_реальный_api_секрет_здесь
 NODE_ENV=development
 NEXT_PUBLIC_ENABLE_WEBSOCKET=true`
     copyToClipboard(template)
@@ -57,25 +57,87 @@ NEXT_PUBLIC_ENABLE_WEBSOCKET=true`
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
             Диагностика Bybit API
-            {status.hasKeys ? (
+            {status.validation?.valid ? (
               <Badge className="bg-green-600">
                 <CheckCircle className="h-3 w-3 mr-1" />
-                Настроено
+                Ключи валидны
               </Badge>
             ) : (
               <Badge variant="destructive">
                 <XCircle className="h-3 w-3 mr-1" />
-                Не настроено
+                Проблема с ключами
               </Badge>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Валидация ключей */}
+          <div
+            className={`rounded-lg p-4 ${
+              status.validation?.valid
+                ? status.validation?.isDemo
+                  ? "bg-yellow-50 border border-yellow-200"
+                  : "bg-green-50 border border-green-200"
+                : "bg-red-50 border border-red-200"
+            }`}
+          >
+            <h4 className="font-medium mb-2 flex items-center gap-2">
+              <Bug className="h-4 w-4" />
+              Статус API ключей
+            </h4>
+            <div className="text-sm">
+              <p
+                className={`font-medium ${
+                  status.validation?.valid
+                    ? status.validation?.isDemo
+                      ? "text-yellow-800"
+                      : "text-green-800"
+                    : "text-red-800"
+                }`}
+              >
+                {status.validation?.message}
+              </p>
+
+              {status.validation?.isDemo && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-yellow-700 font-medium">🎭 ДЕМО РЕЖИМ АКТИВЕН</p>
+                  <p className="text-yellow-700">Дашборд показывает тестовые данные для демонстрации функционала.</p>
+
+                  <div className="bg-yellow-100 p-3 rounded mt-2">
+                    <p className="text-yellow-800 font-medium mb-2">Для работы с реальными данными:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-yellow-700 text-sm">
+                      <li>
+                        Получите реальные API ключи на{" "}
+                        <a
+                          href="https://www.bybit.com/app/user/api-management"
+                          target="_blank"
+                          className="underline"
+                          rel="noreferrer"
+                        >
+                          bybit.com
+                        </a>
+                      </li>
+                      <li>Создайте файл .env.local с реальными ключами</li>
+                      <li>Перезапустите сервер</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+
+              {!status.validation?.valid && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-red-700 font-medium">🚨 ПРОБЛЕМА С API КЛЮЧАМИ</p>
+                  <p className="text-red-700">API ключи не настроены или некорректны.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Детальная диагностика */}
           <div className="bg-gray-50 rounded-lg p-4">
             <h4 className="font-medium mb-3 flex items-center gap-2">
               <Bug className="h-4 w-4" />
-              Диагностика переменных окружения
+              Детальная диагностика
             </h4>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -107,10 +169,10 @@ NEXT_PUBLIC_ENABLE_WEBSOCKET=true`
                     <span className="text-gray-600">NODE_ENV:</span> <code>{diagnosis.nodeEnv}</code>
                   </div>
                   <div>
-                    <span className="text-gray-600">Bybit переменные:</span> {diagnosis.bybitVars.length}
+                    <span className="text-gray-600">Источник ключей:</span> <code>{status.source}</code>
                   </div>
                   <div>
-                    <span className="text-gray-600">Всего env переменных:</span> {diagnosis.allEnvKeys}
+                    <span className="text-gray-600">Bybit переменные:</span> {diagnosis.bybitVars.length}
                   </div>
                 </div>
               </div>
@@ -162,30 +224,25 @@ NEXT_PUBLIC_ENABLE_WEBSOCKET=true`
           </div>
 
           {/* Инструкции по настройке */}
-          {!status.hasKeys && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          {!status.validation?.valid && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-medium text-red-900 mb-2">Проблема с API ключами!</p>
+                  <p className="font-medium text-yellow-900 mb-2">Как исправить проблему:</p>
 
-                  <div className="space-y-2 text-red-800">
+                  <div className="space-y-2 text-yellow-800">
                     <p>
-                      <strong>Проверьте:</strong>
+                      <strong>1. Создайте файл .env.local в корне проекта</strong>
                     </p>
-                    <ul className="list-disc list-inside space-y-1 ml-4">
-                      <li>
-                        Файл <code className="bg-red-100 px-1 rounded">.env.local</code> существует в корне проекта
-                      </li>
-                      <li>Каждая переменная на отдельной строке</li>
-                      <li>Нет пробелов вокруг знака =</li>
-                      <li>Сервер перезапущен после создания файла</li>
-                    </ul>
+                    <p>
+                      <strong>2. Добавьте в него ваши реальные API ключи:</strong>
+                    </p>
                   </div>
 
-                  <div className="mt-3 bg-red-100 p-2 rounded text-xs font-mono">
-                    <div>BYBIT_API_KEY=ваш_реальный_ключ</div>
-                    <div>BYBIT_API_SECRET=ваш_реальный_секрет</div>
+                  <div className="mt-3 bg-yellow-100 p-2 rounded text-xs font-mono">
+                    <div>BYBIT_API_KEY=ваш_реальный_ключ_здесь</div>
+                    <div>BYBIT_API_SECRET=ваш_реальный_секрет_здесь</div>
                     <div>NODE_ENV=development</div>
                   </div>
 
@@ -198,11 +255,15 @@ NEXT_PUBLIC_ENABLE_WEBSOCKET=true`
                       href="https://www.bybit.com/app/user/api-management"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-red-600 hover:underline text-xs"
+                      className="text-yellow-600 hover:underline text-xs"
                     >
                       Получить ключи на Bybit →
                     </a>
                   </div>
+
+                  <p className="mt-3 text-yellow-700 text-xs">
+                    <strong>3. Перезапустите сервер после создания файла</strong>
+                  </p>
                 </div>
               </div>
             </div>

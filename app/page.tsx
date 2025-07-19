@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [isLoading, setIsLoading] = useState(false)
-  const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "error">("unknown")
+  const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "demo" | "error">("unknown")
   const [showApiSettings, setShowApiSettings] = useState(false)
   const [isClient, setIsClient] = useState(false)
 
@@ -48,11 +48,19 @@ export default function Dashboard() {
       setAlerts(alertsData)
       setLastUpdate(new Date())
 
-      // Проверяем есть ли реальные данные
-      const hasRealData = botsData.some((bot) => bot.name.includes("LIVE"))
-      setApiStatus(hasRealData ? "connected" : "error")
+      // Проверяем тип данных
+      const hasRealData = botsData.some((bot) => bot.name.includes("🔴 LIVE"))
+      const hasDemoData = botsData.some((bot) => bot.name.includes("🎭 DEMO") || bot.name.includes("📊 Demo"))
 
-      console.log("✅ Данные загружены, статус API:", hasRealData ? "connected" : "error")
+      if (hasRealData) {
+        setApiStatus("connected")
+      } else if (hasDemoData) {
+        setApiStatus("demo")
+      } else {
+        setApiStatus("error")
+      }
+
+      console.log("✅ Данные загружены, статус API:", hasRealData ? "connected" : hasDemoData ? "demo" : "error")
     } catch (error) {
       console.error("❌ Ошибка загрузки данных:", error)
       setApiStatus("error")
@@ -89,9 +97,11 @@ export default function Dashboard() {
   const getApiStatusBadge = () => {
     switch (apiStatus) {
       case "connected":
-        return <Badge className="bg-green-600">🟢 API Подключен</Badge>
+        return <Badge className="bg-green-600">🟢 Реальные данные</Badge>
+      case "demo":
+        return <Badge className="bg-yellow-600">🎭 Демо режим</Badge>
       case "error":
-        return <Badge variant="secondary">🔴 Тестовые данные</Badge>
+        return <Badge variant="destructive">🔴 Ошибка</Badge>
       default:
         return <Badge variant="secondary">⚪ Проверка...</Badge>
     }
@@ -187,12 +197,28 @@ export default function Dashboard() {
           </div>
         )}
 
+        {apiStatus === "demo" && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium text-yellow-800">
+                  🎭 Демо режим активен. Показываются тестовые данные для демонстрации функционала.
+                </span>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setShowApiSettings(true)}>
+                Настроить API
+              </Button>
+            </div>
+          </div>
+        )}
+
         {apiStatus === "connected" && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
               <span className="text-sm font-medium text-green-800">
-                Подключено к Bybit API! Отображаются реальные данные вашего аккаунта.
+                🔴 Подключено к реальному Bybit API! Отображаются данные вашего аккаунта.
               </span>
             </div>
           </div>

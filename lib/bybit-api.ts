@@ -1,8 +1,7 @@
 import type { TradingBot, ActivePosition, Alert, PerformancePoint, TradeRecord } from "@/types/trading"
 import { getBybitBalance, getBybitPositions, getBybitTrades, testBybitConnection } from "./bybit-simple"
-import { makeAlternativeRequest, testAlternativeMethod } from "./bybit-alternative"
 
-// Функция для генерации исторических данных (стабильная)
+// Функция для генерации стабильных исторических данных
 function generatePerformanceHistory(initialBalance: number, days = 30, seed: string): PerformancePoint[] {
   const history: PerformancePoint[] = []
   let currentBalance = initialBalance
@@ -34,74 +33,54 @@ function generatePerformanceHistory(initialBalance: number, days = 30, seed: str
   return history
 }
 
-// Функция для создания ботов из реальных данных Bybit
+// Создание ботов из реальных данных Bybit
 async function createBotsFromRealData(): Promise<TradingBot[]> {
-  console.log("🔄 === НАЧИНАЕМ СОЗДАНИЕ БОТОВ ИЗ РЕАЛЬНЫХ ДАННЫХ ===")
+  console.log("🔄 === СОЗДАНИЕ БОТОВ ИЗ РЕАЛЬНЫХ ДАННЫХ ===")
 
   try {
-    // Сначала пробуем основной метод
-    console.log("1️⃣ Пробуем основной метод...")
-    let balance = await getBybitBalance()
-    let positions = await getBybitPositions()
-    let trades = await getBybitTrades()
+    // Получаем данные параллельно
+    const [balance, positions, trades] = await Promise.all([getBybitBalance(), getBybitPositions(), getBybitTrades()])
 
-    // Если основной метод не работает, пробуем альтернативный
-    if (!balance && !positions.length && !trades.length) {
-      console.log("2️⃣ Основной метод не работает, пробуем альтернативный...")
+    console.log("📊 Полученные данные:")
+    console.log("- Баланс:", balance ? "✅" : "❌")
+    console.log("- Позиции:", positions ? `✅ (${positions.length})` : "❌")
+    console.log("- Сделки:", trades ? `✅ (${trades.length})` : "❌")
 
-      const altTest = await testAlternativeMethod()
-      if (altTest) {
-        console.log("✅ Альтернативный метод работает!")
-        balance = await makeAlternativeRequest("/v5/account/wallet-balance", { accountType: "UNIFIED" })
-        positions = (await makeAlternativeRequest("/v5/position/list", { category: "linear" }))?.list || []
-        trades = (await makeAlternativeRequest("/v5/execution/list", { category: "linear", limit: 50 }))?.list || []
-      }
+    // Если нет данных, возвращаем пустой массив
+    if (!balance && (!positions || positions.length === 0) && (!trades || trades.length === 0)) {
+      console.log("⚠️ Нет реальных данных для создания ботов")
+      return []
     }
-
-    console.log("📊 Итоговые данные:")
-    console.log("- Баланс:", balance)
-    console.log("- Позиции:", positions?.length || 0)
-    console.log("- Сделки:", trades?.length || 0)
-
-    const bots: TradingBot[] = []
 
     // Рассчитываем общий баланс
     let totalBalance = 0
-    let balanceDetails = "API недоступен"
+    let balanceDetails = "Нет данных"
 
     if (balance && balance.coin && Array.isArray(balance.coin)) {
-      console.log("💰 Обрабатываем баланс...")
       const nonZeroCoins = balance.coin.filter((coin: any) => {
         const walletBalance = Number.parseFloat(coin.walletBalance || "0")
         return walletBalance > 0
       })
 
       if (nonZeroCoins.length > 0) {
+        totalBalance = nonZeroCoins.reduce((sum: number, coin: any) => {
+          return sum + Number.parseFloat(coin.walletBalance || "0")
+        }, 0)
+
         balanceDetails = nonZeroCoins
-          .map((coin: any) => {
-            const walletBalance = Number.parseFloat(coin.walletBalance || "0")
-            totalBalance += walletBalance
-            return `${coin.coin}: ${walletBalance}`
-          })
+          .map((coin: any) => `${coin.coin}: ${Number.parseFloat(coin.walletBalance).toFixed(2)}`)
           .join(", ")
       } else {
         balanceDetails = "Нулевой баланс"
       }
-
-      console.log("💰 Общий баланс:", totalBalance)
-    } else {
-      console.log("❌ Баланс не получен")
-      totalBalance = 0
-      balanceDetails = "Баланс недоступен"
     }
 
     // Преобразуем позиции
-    let realPositions: ActivePosition[] = []
-    if (positions && Array.isArray(positions) && positions.length > 0) {
-      console.log("📊 Обрабатываем позиции...")
-      realPositions = positions
+    const realPositions: ActivePosition[] = []
+    if (positions && Array.isArray(positions)) {
+      positions
         .filter((pos: any) => pos && pos.symbol && Number.parseFloat(pos.size || "0") > 0)
-        .map((pos: any, index: number) => {
+        .forEach((pos: any, index: number) => {
           const entryPrice = Number.parseFloat(pos.entryPrice || "0")
           const markPrice = Number.parseFloat(pos.markPrice || pos.entryPrice || "0")
           const size = Number.parseFloat(pos.size || "0")
@@ -110,7 +89,7 @@ async function createBotsFromRealData(): Promise<TradingBot[]> {
           const pnlPercentage =
             entryPrice > 0 ? ((markPrice - entryPrice) / entryPrice) * 100 * (pos.side === "Sell" ? -1 : 1) : 0
 
-          return {
+          realPositions.push({
             id: `pos-${pos.symbol}-${Date.now()}-${index}`,
             botId: "real-bot-1",
             symbol: pos.symbol,
@@ -121,19 +100,17 @@ async function createBotsFromRealData(): Promise<TradingBot[]> {
             pnl: unrealisedPnl,
             pnlPercentage,
             openTime: new Date(Number.parseInt(pos.createdTime || Date.now().toString())).toISOString(),
-          }
+          })
         })
-      console.log("✅ Позиции обработаны:", realPositions.length)
     }
 
     // Преобразуем сделки
-    let realTrades: TradeRecord[] = []
-    if (trades && Array.isArray(trades) && trades.length > 0) {
-      console.log("📈 Обрабатываем сделки...")
-      realTrades = trades
+    const realTrades: TradeRecord[] = []
+    if (trades && Array.isArray(trades)) {
+      trades
         .filter((trade: any) => trade && trade.symbol)
         .slice(0, 50)
-        .map((trade: any, index: number) => {
+        .forEach((trade: any, index: number) => {
           const entryPrice = Number.parseFloat(trade.execPrice || "0")
           const size = Number.parseFloat(trade.execQty || "0")
           const fee = Number.parseFloat(trade.execFee || "0")
@@ -142,7 +119,7 @@ async function createBotsFromRealData(): Promise<TradingBot[]> {
           const pnl = (exitPrice - entryPrice) * size * (trade.side === "Sell" ? -1 : 1) - fee
           const pnlPercentage = ((exitPrice - entryPrice) / entryPrice) * 100 * (trade.side === "Sell" ? -1 : 1)
 
-          return {
+          realTrades.push({
             id: trade.execId || `trade-${index}`,
             symbol: trade.symbol,
             side: trade.side,
@@ -154,13 +131,12 @@ async function createBotsFromRealData(): Promise<TradingBot[]> {
             openTime: new Date(Number.parseInt(trade.execTime || Date.now().toString())).toISOString(),
             closeTime: new Date(Number.parseInt(trade.execTime || Date.now().toString()) + 3600000).toISOString(),
             duration: 60,
-          }
+          })
         })
-      console.log("✅ Сделки обработаны:", realTrades.length)
     }
 
-    // Если получили хоть какие-то данные, создаем бота
-    if (balance || realPositions.length > 0 || realTrades.length > 0) {
+    // Создаем бота если есть хоть какие-то данные
+    if (totalBalance > 0 || realPositions.length > 0 || realTrades.length > 0) {
       const totalPnL = realTrades.reduce((sum, trade) => sum + trade.pnl, 0)
       const winTrades = realTrades.filter((trade) => trade.pnl > 0).length
       const lossTrades = realTrades.length - winTrades
@@ -190,20 +166,19 @@ async function createBotsFromRealData(): Promise<TradingBot[]> {
         tradeHistory: realTrades,
       }
 
-      bots.push(mainBot)
       console.log("✅ Создан реальный бот:", mainBot.name)
-      return bots
+      return [mainBot]
     }
 
-    console.log("⚠️ Не удалось получить данные")
+    console.log("⚠️ Недостаточно данных для создания бота")
     return []
   } catch (error) {
-    console.error("❌ Критическая ошибка создания ботов:", error)
+    console.error("❌ Ошибка создания ботов из реальных данных:", error)
     return []
   }
 }
 
-// Создание тестовых ботов (как fallback)
+// Создание тестовых ботов
 function createMockBots(): TradingBot[] {
   console.log("📝 Создаем тестовых ботов...")
 
@@ -251,21 +226,19 @@ function createMockBots(): TradingBot[] {
 
 // Основная функция получения ботов
 export async function fetchBots(): Promise<TradingBot[]> {
-  console.log("🚀 === НАЧИНАЕМ ЗАГРУЗКУ БОТОВ ===")
+  console.log("🚀 === ЗАГРУЗКА БОТОВ ===")
 
   try {
-    console.log("🔍 Проверяем подключение к API...")
+    // Сначала проверяем подключение
     const connectionTest = await testBybitConnection()
-    console.log("🔍 Результат теста подключения:", connectionTest)
+    console.log("🔍 Тест подключения:", connectionTest.success ? "✅" : "❌")
 
     if (connectionTest.success) {
       console.log("✅ API работает! Получаем реальные данные...")
-
       const realBots = await createBotsFromRealData()
-      console.log("📊 Результат создания реальных ботов:", realBots)
 
       if (realBots.length > 0) {
-        console.log("🎉 УСПЕХ! Используем реальные данные Bybit!")
+        console.log("🎉 Используем реальные данные Bybit!")
         return realBots
       }
     }
@@ -273,22 +246,17 @@ export async function fetchBots(): Promise<TradingBot[]> {
     console.log("📝 Используем тестовые данные")
     return createMockBots()
   } catch (error) {
-    console.error("❌ КРИТИЧЕСКАЯ ОШИБКА получения ботов:", error)
+    console.error("❌ Критическая ошибка получения ботов:", error)
     return createMockBots()
   }
 }
 
+// Получение активных позиций
 export async function fetchActivePositions(): Promise<ActivePosition[]> {
   console.log("📊 Загружаем активные позиции...")
 
   try {
-    let positions = await getBybitPositions()
-
-    // Если основной метод не работает, пробуем альтернативный
-    if (!positions || positions.length === 0) {
-      const altResult = await makeAlternativeRequest("/v5/position/list", { category: "linear" })
-      positions = altResult?.list || []
-    }
+    const positions = await getBybitPositions()
 
     if (positions && positions.length > 0) {
       console.log("✅ Получены реальные позиции:", positions.length)
@@ -317,6 +285,7 @@ export async function fetchActivePositions(): Promise<ActivePosition[]> {
   }
 }
 
+// Получение алертов
 export async function fetchAlerts(): Promise<Alert[]> {
   return [
     {
