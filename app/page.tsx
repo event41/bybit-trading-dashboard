@@ -3,14 +3,12 @@
 import { useState, useEffect } from "react"
 import type { TradingBot, ActivePosition, Alert } from "@/types/trading"
 import { BotCard } from "@/components/bot-card"
-import { ApiStatus } from "@/components/api-status"
+import { DiagnosticPanel } from "@/components/diagnostic-panel"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { RefreshCw, DollarSign, TrendingUp, Activity, Users, Settings, Database, Zap } from "lucide-react"
+import { RefreshCw, DollarSign, TrendingUp, Activity, Users, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { fetchBots, fetchActivePositions, fetchAlerts } from "@/lib/bybit-api"
-import { ApiTest } from "@/components/api-test"
-import { directApiTest } from "@/lib/bybit-simple"
 
 export default function Dashboard() {
   const [bots, setBots] = useState<TradingBot[]>([])
@@ -19,7 +17,7 @@ export default function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [isLoading, setIsLoading] = useState(false)
   const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "demo" | "error">("unknown")
-  const [showApiSettings, setShowApiSettings] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(true) // Показываем диагностику по умолчанию
   const [isClient, setIsClient] = useState(false)
 
   // Исправляем проблему с гидратацией
@@ -69,12 +67,6 @@ export default function Dashboard() {
     }
   }
 
-  // Принудительная загрузка реальных данных
-  const forceLoadRealData = async () => {
-    console.log("🚀 ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА РЕАЛЬНЫХ ДАННЫХ")
-    await loadData()
-  }
-
   // Загружаем данные при первом запуске
   useEffect(() => {
     loadData()
@@ -105,14 +97,6 @@ export default function Dashboard() {
       default:
         return <Badge variant="secondary">⚪ Проверка...</Badge>
     }
-  }
-
-  // Добавьте новую функцию в компонент:
-  const handleQuickTest = async () => {
-    console.log("⚡ Быстрый тест API...")
-    const results = await directApiTest()
-    console.log("⚡ Результаты быстрого теста:", results)
-    alert(`Тест завершен! Проверьте консоль. Ошибок: ${results.errors.length}`)
   }
 
   // Показываем загрузку до гидратации
@@ -153,17 +137,9 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => setShowApiSettings(!showApiSettings)} variant="outline" size="sm">
+            <Button onClick={() => setShowDiagnostics(!showDiagnostics)} variant="outline" size="sm">
               <Settings className="h-4 w-4 mr-2" />
-              {showApiSettings ? "Скрыть настройки" : "Настройки API"}
-            </Button>
-            <Button onClick={handleQuickTest} variant="outline" size="sm">
-              <Zap className="h-4 w-4 mr-2" />
-              Быстрый тест API
-            </Button>
-            <Button onClick={forceLoadRealData} disabled={isLoading} variant="outline">
-              <Database className="h-4 w-4 mr-2" />
-              Загрузить реальные данные
+              {showDiagnostics ? "Скрыть диагностику" : "Показать диагностику"}
             </Button>
             <Button onClick={loadData} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
@@ -172,11 +148,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Настройки API */}
-        {showApiSettings && (
-          <div className="space-y-4">
-            <ApiStatus />
-            <ApiTest />
+        {/* Диагностическая панель */}
+        {showDiagnostics && (
+          <div className="bg-white rounded-lg border-2 border-blue-200">
+            <DiagnosticPanel />
           </div>
         )}
 
@@ -187,11 +162,11 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
                 <span className="text-sm font-medium text-yellow-800">
-                  Используются тестовые данные. API работает, но реальные данные не загружаются.
+                  ⚠️ Используются тестовые данные. Запустите диагностику для выявления проблем.
                 </span>
               </div>
-              <Button size="sm" variant="outline" onClick={forceLoadRealData}>
-                Попробовать снова
+              <Button size="sm" variant="outline" onClick={() => setShowDiagnostics(true)}>
+                Диагностика
               </Button>
             </div>
           </div>
@@ -206,7 +181,7 @@ export default function Dashboard() {
                   🎭 Демо режим активен. Показываются тестовые данные для демонстрации функционала.
                 </span>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setShowApiSettings(true)}>
+              <Button size="sm" variant="outline" onClick={() => setShowDiagnostics(true)}>
                 Настроить API
               </Button>
             </div>
@@ -304,17 +279,15 @@ export default function Dashboard() {
           <div className="text-center py-12">
             <div className="text-gray-400 text-6xl mb-4">🤖</div>
             <h3 className="text-xl font-semibold text-gray-600 mb-2">Нет активных ботов</h3>
-            <p className="text-gray-500">Проверьте консоль браузера для диагностики</p>
-            <Button className="mt-4" onClick={forceLoadRealData}>
-              Загрузить реальные данные
-            </Button>
+            <p className="text-gray-500 mb-4">Запустите диагностику для выявления проблем с API</p>
+            <Button onClick={() => setShowDiagnostics(true)}>Открыть диагностику</Button>
           </div>
         )}
 
         {/* Футер */}
         <div className="text-center py-6 border-t border-gray-200">
           <p className="text-sm text-gray-500">
-            Dashboard обновляется автоматически • Откройте консоль браузера (F12) для детальных логов
+            🔍 Новая система диагностики поможет найти проблему • Откройте консоль браузера (F12) для детальных логов
           </p>
         </div>
       </div>
