@@ -3,293 +3,375 @@
 import { useState, useEffect } from "react"
 import type { TradingBot, ActivePosition, Alert } from "@/types/trading"
 import { BotCard } from "@/components/bot-card"
-import { DiagnosticPanel } from "@/components/diagnostic-panel"
+import { SetupGuide } from "@/components/setup-guide"
+import { SimpleDiagnostic } from "@/components/simple-diagnostic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { RefreshCw, DollarSign, TrendingUp, Activity, Users, Settings } from "lucide-react"
+import { RefreshCw, DollarSign, TrendingUp, Activity, Users, Settings, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { fetchBots, fetchActivePositions, fetchAlerts } from "@/lib/bybit-api"
 
-export default function Dashboard() {
+interface SystemStatus {
+  environment: {
+    NODE_ENV: string
+    BYBIT_API_KEY_EXISTS: boolean
+    BYBIT_API_SECRET_EXISTS: boolean
+    BYBIT_API_KEY_LENGTH: number
+    BYBIT_API_SECRET_LENGTH: number
+    BYBIT_API_KEY_PREVIEW: string
+    BYBIT_API_SECRET_PREVIEW: string
+  }
+  diagnosis: {
+    keysExist: boolean
+    keysValid: boolean
+    keysConfigured: boolean
+    issue: string
+    solution: string
+  }
+}
+
+export default function TradingDashboard() {
   const [bots, setBots] = useState<TradingBot[]>([])
   const [positions, setPositions] = useState<ActivePosition[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null)
+  const [showSetup, setShowSetup] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
-  const [isLoading, setIsLoading] = useState(false)
-  const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "demo" | "error">("unknown")
-  const [showDiagnostics, setShowDiagnostics] = useState(true) // Показываем диагностику по умолчанию
-  const [isClient, setIsClient] = useState(false)
 
-  // Исправляем проблему с гидратацией
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  // Функция для загрузки всех данных
-  const loadData = async () => {
-    console.log("🔄 === НАЧИНАЕМ ЗАГРУЗКУ ДАННЫХ ===")
-    setIsLoading(true)
+  // Проверка статуса системы
+  const checkSystemStatus = async () => {
     try {
-      const [botsData, positionsData, alertsData] = await Promise.all([
-        fetchBots(),
-        fetchActivePositions(),
-        fetchAlerts(),
-      ])
-
-      console.log("📊 Полученные данные:")
-      console.log("- Боты:", botsData)
-      console.log("- Позиции:", positionsData)
-      console.log("- Алерты:", alertsData)
-
-      setBots(botsData)
-      setPositions(positionsData)
-      setAlerts(alertsData)
-      setLastUpdate(new Date())
-
-      // Проверяем тип данных
-      const hasRealData = botsData.some((bot) => bot.name.includes("🔴 LIVE"))
-      const hasDemoData = botsData.some((bot) => bot.name.includes("🎭 DEMO") || bot.name.includes("📊 Demo"))
-
-      if (hasRealData) {
-        setApiStatus("connected")
-      } else if (hasDemoData) {
-        setApiStatus("demo")
-      } else {
-        setApiStatus("error")
-      }
-
-      console.log("✅ Данные загружены, статус API:", hasRealData ? "connected" : hasDemoData ? "demo" : "error")
+      const response = await fetch("/api/status")
+      const data = await response.json()
+      setSystemStatus(data)
+      console.log("🔍 Статус системы:", data)
+      return data.diagnosis?.keysConfigured || false
     } catch (error) {
-      console.error("❌ Ошибка загрузки данных:", error)
-      setApiStatus("error")
-    } finally {
-      setIsLoading(false)
+      console.error("❌ Ошибка проверки статуса:", error)
+      return false
     }
   }
 
-  // Загружаем данные при первом запуске
+  // Загрузка данных
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Сначала проверяем статус системы
+      const isConfigured = await checkSystemStatus()
+
+      if (!isConfigured) {
+        console.log("⚠️ API ключи не настроены - пропускаем загрузку данных")
+        setLoading(false)
+        return
+      }
+
+      console.log("✅ API ключи настроены - загружаем данные")
+
+      // Загружаем данные параллельно
+      const [botsResponse, positionsResponse, alertsResponse] = await Promise.all([
+        fetch("/api/bots"),
+        fetch("/api/positions"),
+        fetch("/api/alerts"),
+      ])
+
+      const [botsData, positionsData, alertsData] = await Promise.all([
+        botsResponse.json(),
+        positionsResponse.json(),
+        alertsResponse.json(),
+      ])
+
+      console.log("📊 Данные получены:", {
+        bots: botsData.bots?.length || 0,
+        positions: positionsData.positions?.length || 0,
+        alerts: alertsData.alerts?.length || 0,
+      })
+
+      setBots(botsData.bots || [])
+      setPositions(positionsData.positions || [])
+      setAlerts(alertsData.alerts || [])
+      setLastUpdate(new Date())
+    } catch (err) {
+      console.error("❌ Ошибка загрузки данных:", err)
+      setError(err?.toString() || "Неизвестная ошибка")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadData()
   }, [])
 
-  // Автообновление каждые 30 секунд
+  // Автообновление каждые 30 секунд если API настроен
   useEffect(() => {
-    const interval = setInterval(loadData, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Подсчет общей статистики
-  const totalBalance = bots.reduce((sum, bot) => sum + bot.balance, 0)
-  const totalPnL = bots.reduce((sum, bot) => sum + bot.totalPnL, 0)
-  const activeBots = bots.filter((bot) => bot.status === "active").length
-  const totalTrades = bots.reduce((sum, bot) => sum + bot.totalTrades, 0)
-  const totalOpenPositions = positions.length
-  const totalOpenPnL = positions.reduce((sum, pos) => sum + pos.pnl, 0)
+    if (systemStatus?.diagnosis?.keysConfigured) {
+      const interval = setInterval(loadData, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [systemStatus])
 
   const getApiStatusBadge = () => {
-    switch (apiStatus) {
-      case "connected":
-        return <Badge className="bg-green-600">🟢 Реальные данные</Badge>
-      case "demo":
-        return <Badge className="bg-yellow-600">🎭 Демо режим</Badge>
-      case "error":
-        return <Badge variant="destructive">🔴 Ошибка</Badge>
-      default:
-        return <Badge variant="secondary">⚪ Проверка...</Badge>
+    if (!systemStatus) {
+      return <Badge variant="secondary">⚪ Проверка...</Badge>
+    }
+
+    if (systemStatus.diagnosis.keysConfigured) {
+      return <Badge className="bg-green-600">🟢 API настроен</Badge>
+    } else {
+      return <Badge variant="destructive">🔴 Требуется настройка</Badge>
     }
   }
 
-  // Показываем загрузку до гидратации
-  if (!isClient) {
+  // Если показываем настройку
+  if (showSetup) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">🚀 Bybit Trading Dashboard</h1>
-              <div className="flex items-center gap-4 mt-1">
-                <p className="text-gray-600">Загрузка...</p>
-                <Badge variant="secondary">⚪ Инициализация...</Badge>
-              </div>
-            </div>
-          </div>
-          <div className="text-center py-12">
-            <div className="inline-flex items-center gap-2 text-gray-600">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Инициализация дашборда...
-            </div>
-          </div>
+      <div className="container mx-auto p-6">
+        <div className="mb-6">
+          <Button onClick={() => setShowSetup(false)} variant="outline">
+            ← Назад к дашборду
+          </Button>
         </div>
+        <SetupGuide />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Заголовок */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">🚀 Bybit Trading Dashboard</h1>
-            <div className="flex items-center gap-4 mt-1">
-              <p className="text-gray-600">Последнее обновление: {lastUpdate.toLocaleTimeString("ru-RU")}</p>
-              {getApiStatusBadge()}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setShowDiagnostics(!showDiagnostics)} variant="outline" size="sm">
-              <Settings className="h-4 w-4 mr-2" />
-              {showDiagnostics ? "Скрыть диагностику" : "Показать диагностику"}
-            </Button>
-            <Button onClick={loadData} disabled={isLoading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-              Обновить
-            </Button>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Заголовок */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">🔴 LIVE Trading Dashboard</h1>
+          <div className="flex items-center gap-4 mt-1">
+            <p className="text-muted-foreground">Последнее обновление: {lastUpdate.toLocaleTimeString("ru-RU")}</p>
+            {getApiStatusBadge()}
           </div>
         </div>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowDiagnostics(!showDiagnostics)} variant="outline" size="sm">
+            <Settings className="h-4 w-4 mr-2" />
+            {showDiagnostics ? "Скрыть" : "Показать"} диагностику
+          </Button>
+          <Button onClick={() => setShowSetup(true)} variant="outline" size="sm">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Настройка
+          </Button>
+          <Button onClick={loadData} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Обновить
+          </Button>
+        </div>
+      </div>
 
-        {/* Диагностическая панель */}
-        {showDiagnostics && (
-          <div className="bg-white rounded-lg border-2 border-blue-200">
-            <DiagnosticPanel />
-          </div>
-        )}
+      {/* Диагностика */}
+      {showDiagnostics && (
+        <div className="mb-6">
+          <SimpleDiagnostic />
+        </div>
+      )}
 
-        {/* API статус */}
-        {apiStatus === "error" && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+      {/* Статус API ключей */}
+      {systemStatus && !systemStatus.diagnosis.keysConfigured && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                <span className="text-sm font-medium text-yellow-800">
-                  ⚠️ Используются тестовые данные. Запустите диагностику для выявления проблем.
-                </span>
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <div>
+                  <p className="font-medium text-red-800">{systemStatus.diagnosis.issue}</p>
+                  <p className="text-sm text-red-600">{systemStatus.diagnosis.solution}</p>
+                </div>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setShowDiagnostics(true)}>
-                Диагностика
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {apiStatus === "demo" && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                <span className="text-sm font-medium text-yellow-800">
-                  🎭 Демо режим активен. Показываются тестовые данные для демонстрации функционала.
-                </span>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => setShowDiagnostics(true)}>
+              <Button onClick={() => setShowSetup(true)} size="sm">
                 Настроить API
               </Button>
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        {apiStatus === "connected" && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+      {/* Статус подключения */}
+      {systemStatus?.diagnosis?.keysConfigured && (
+        <Card className="border-green-200 bg-green-50">
+          <CardContent className="pt-6">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-green-800">
+              <span className="text-green-700 font-medium">
                 🔴 Подключено к реальному Bybit API! Отображаются данные вашего аккаунта.
               </span>
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Общая статистика */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Общий баланс</CardTitle>
-              <DollarSign className="h-4 w-4 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">${totalBalance.toLocaleString()}</div>
-              <p className="text-xs text-gray-500 mt-1">USD</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Открытые позиции</CardTitle>
-              <Activity className="h-4 w-4 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{totalOpenPositions}</div>
-              <div className={`text-xs mt-1 ${totalOpenPnL >= 0 ? "text-green-600" : "text-red-600"}`}>
-                P&L: {totalOpenPnL >= 0 ? "+" : ""}${totalOpenPnL.toFixed(2)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Активные боты</CardTitle>
-              <Users className="h-4 w-4 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">
-                {activeBots}/{bots.length}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {activeBots} из {bots.length} работают
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Общий P&L</CardTitle>
-              <TrendingUp className="h-4 w-4 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${totalPnL >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {totalPnL >= 0 ? "+" : ""}${totalPnL.toFixed(2)}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">{totalPnL >= 0 ? "Прибыль" : "Убыток"}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Статус загрузки */}
-        {isLoading && (
-          <div className="text-center py-4">
-            <div className="inline-flex items-center gap-2 text-gray-600">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Загрузка данных... (проверьте консоль браузера)
+      {/* Ошибка */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <span className="text-red-700">Ошибка: {error}</span>
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Боты */}
-        <div>
-          <h2 className="text-2xl font-bold mb-6 text-gray-900">📊 Торговые боты</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {bots.map((bot) => (
-              <BotCard key={bot.id} bot={bot} activePositions={positions} />
+      {/* Статистика */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Общий баланс</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${bots.reduce((sum, bot) => sum + bot.balance, 0).toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">USDT</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Общий P&L</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`text-2xl font-bold ${
+                bots.reduce((sum, bot) => sum + bot.totalPnL, 0) >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              ${bots.reduce((sum, bot) => sum + bot.totalPnL, 0).toFixed(2)}
+            </div>
+            <p className="text-xs text-muted-foreground">За все время</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Активные позиции</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{positions.length}</div>
+            <p className="text-xs text-muted-foreground">Открытых позиций</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Активные боты</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{bots.filter((bot) => bot.status === "active").length}</div>
+            <p className="text-xs text-muted-foreground">Из {bots.length} ботов</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Статус загрузки */}
+      {loading && (
+        <div className="text-center py-8">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
+          <p>Загрузка данных с Bybit API...</p>
+        </div>
+      )}
+
+      {/* Боты */}
+      {systemStatus?.diagnosis?.keysConfigured && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-semibold">📊 Торговые боты</h2>
+          {bots.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {bots.map((bot) => (
+                <BotCard key={bot.id} bot={bot} activePositions={positions} />
+              ))}
+            </div>
+          ) : !loading ? (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Нет активных ботов</h3>
+                <p className="text-gray-600 mb-4">
+                  API ключи настроены, но активных позиций не найдено. Проверьте ваш аккаунт на Bybit.
+                </p>
+                <Button onClick={() => setShowDiagnostics(true)} variant="outline">
+                  Показать диагностику
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      )}
+
+      {/* Позиции */}
+      {positions.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-semibold">📈 Активные позиции</h2>
+          <div className="grid gap-4">
+            {positions.map((position) => (
+              <Card key={position.id}>
+                <CardContent className="pt-6">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="font-semibold">{position.symbol}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {position.side} • Размер: {position.size}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-semibold ${position.pnl >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        ${position.pnl.toFixed(2)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">{position.pnlPercentage.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>
+      )}
 
-        {/* Если нет данных */}
-        {bots.length === 0 && !isLoading && (
-          <div className="text-center py-12">
-            <div className="text-gray-400 text-6xl mb-4">🤖</div>
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">Нет активных ботов</h3>
-            <p className="text-gray-500 mb-4">Запустите диагностику для выявления проблем с API</p>
-            <Button onClick={() => setShowDiagnostics(true)}>Открыть диагностику</Button>
+      {/* Алерты */}
+      {alerts.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-semibold">🔔 Последние уведомления</h2>
+          <div className="space-y-2">
+            {alerts.slice(0, 5).map((alert) => (
+              <Card
+                key={alert.id}
+                className={
+                  alert.type === "error"
+                    ? "border-red-200 bg-red-50"
+                    : alert.type === "warning"
+                      ? "border-yellow-200 bg-yellow-50"
+                      : alert.type === "success"
+                        ? "border-green-200 bg-green-50"
+                        : "border-blue-200 bg-blue-50"
+                }
+              >
+                <CardContent className="pt-4">
+                  <p className="text-sm">{alert.message}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{new Date(alert.timestamp).toLocaleString()}</p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        )}
-
-        {/* Футер */}
-        <div className="text-center py-6 border-t border-gray-200">
-          <p className="text-sm text-gray-500">
-            🔍 Новая система диагностики поможет найти проблему • Откройте консоль браузера (F12) для детальных логов
-          </p>
         </div>
+      )}
+
+      {/* Футер */}
+      <div className="text-center py-6 border-t border-gray-200">
+        <p className="text-sm text-gray-500">
+          {systemStatus?.diagnosis?.keysConfigured
+            ? "🔴 Подключено к реальному Bybit API • Демо режим отключен • Обновление каждые 30 секунд"
+            : "🔧 Настройте API ключи для подключения к Bybit • Следуйте пошаговой инструкции выше"}
+        </p>
       </div>
     </div>
   )

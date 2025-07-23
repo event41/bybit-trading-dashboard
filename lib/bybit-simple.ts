@@ -1,26 +1,29 @@
-// ИСПРАВЛЕННАЯ реализация с правильной подписью на основе ошибки Bybit
+// ИСПРАВЛЕННАЯ реализация БЕЗ демо режима - только реальные данные
 
-const API_KEY = process.env.BYBIT_API_KEY || "nBvwdEqz4WgGCQIQBR"
-const API_SECRET = process.env.BYBIT_API_SECRET || "NY3exgnwUQZtO14ysRUepZSjRGJfpKNmikBXN"
+const API_KEY = process.env.BYBIT_API_KEY || ""
+const API_SECRET = process.env.BYBIT_API_SECRET || ""
 
-console.log("🔑 === ИСПРАВЛЕННАЯ РЕАЛИЗАЦИЯ BYBIT API ===")
-console.log("- API_KEY:", API_KEY ? `${API_KEY.substring(0, 8)}...` : "НЕТ")
-console.log("- API_SECRET:", API_SECRET ? `${API_SECRET.substring(0, 8)}...` : "НЕТ")
+console.log("🔍 === ПРОВЕРКА API КЛЮЧЕЙ (БЕЗ ДЕМО) ===")
+console.log(
+  "- process.env.BYBIT_API_KEY:",
+  process.env.BYBIT_API_KEY ? `${process.env.BYBIT_API_KEY.substring(0, 8)}...` : "ОТСУТСТВУЕТ",
+)
+console.log(
+  "- process.env.BYBIT_API_SECRET:",
+  process.env.BYBIT_API_SECRET ? `${process.env.BYBIT_API_SECRET.substring(0, 8)}...` : "ОТСУТСТВУЕТ",
+)
 
-// ПРАВИЛЬНАЯ функция создания подписи на основе ошибки Bybit
+// ПРАВИЛЬНАЯ функция создания подписи
 function createCorrectSignature(timestamp: string, apiKey: string, recvWindow: string, queryString: string): string {
   if (typeof window !== "undefined") {
-    return "browser_mock_signature"
+    throw new Error("Подпись может создаваться только на сервере")
   }
 
   try {
     const crypto = require("crypto")
-
-    // На основе ошибки Bybit: origin_string[1752920866001nBvwdEqz4WgGCQIQBR5000category=linear]
-    // Формат: timestamp + apiKey + recvWindow + queryString
     const message = timestamp + apiKey + recvWindow + queryString
 
-    console.log("🔐 Создание правильной подписи:")
+    console.log("🔐 Создание подписи:")
     console.log("  - timestamp:", timestamp)
     console.log("  - apiKey:", apiKey.substring(0, 8) + "...")
     console.log("  - recvWindow:", recvWindow)
@@ -33,52 +36,72 @@ function createCorrectSignature(timestamp: string, apiKey: string, recvWindow: s
     return signature
   } catch (error) {
     console.error("❌ Ошибка создания подписи:", error)
-    return "error_signature"
+    throw error
   }
 }
 
-// Проверка валидности API ключей
-function validateApiKeys(): { valid: boolean; message: string; isDemo: boolean } {
+// Проверка валидности API ключей - БЕЗ демо режима
+function validateApiKeys(): { valid: boolean; message: string } {
+  console.log("🔍 Валидация API ключей (строгая проверка):")
+  console.log("- API_KEY длина:", API_KEY?.length || 0)
+  console.log("- API_SECRET длина:", API_SECRET?.length || 0)
+
   if (!API_KEY || !API_SECRET) {
-    return { valid: false, message: "API ключи не настроены", isDemo: false }
-  }
-
-  if (API_KEY.length < 10 || API_SECRET.length < 10) {
-    return { valid: false, message: "API ключи слишком короткие", isDemo: false }
-  }
-
-  // Проверяем, что это тестовые ключи
-  if (API_KEY === "nBvwdEqz4WgGCQIQBR" || API_SECRET === "NY3exgnwUQZtO14ysRUepZSjRGJfpKNmikBXN") {
+    console.log("❌ API ключи отсутствуют")
     return {
-      valid: true,
-      message: "Используются тестовые ключи (демо режим)",
-      isDemo: true,
+      valid: false,
+      message: "API ключи не настроены - создайте файл .env.local с реальными ключами",
     }
   }
 
-  return { valid: true, message: "API ключи валидны", isDemo: false }
+  if (API_KEY.length < 10 || API_SECRET.length < 20) {
+    console.log("❌ API ключи слишком короткие")
+    return {
+      valid: false,
+      message: "API ключи слишком короткие - проверьте правильность",
+    }
+  }
+
+  // Проверяем, что это НЕ тестовые ключи
+  if (API_KEY === "nBvwdEqz4WgGCQIQBR" || API_SECRET === "NY3exgnwUQZtO14ysRUepZSjRGJfpKNmikBXN") {
+    console.log("❌ Обнаружены тестовые ключи - они не работают!")
+    return {
+      valid: false,
+      message: "Используются тестовые ключи - замените их на реальные ключи с Bybit",
+    }
+  }
+
+  // Проверяем, что это не placeholder'ы
+  if (
+    API_KEY.includes("ваш_") ||
+    API_SECRET.includes("ваш_") ||
+    API_KEY.includes("your_") ||
+    API_SECRET.includes("your_")
+  ) {
+    console.log("❌ Обнаружены placeholder'ы вместо реальных ключей")
+    return {
+      valid: false,
+      message: "В .env.local используются placeholder'ы - замените их на реальные ключи",
+    }
+  }
+
+  console.log("✅ API ключи выглядят валидными")
+  return { valid: true, message: "API ключи валидны" }
 }
 
-// Основная функция для API запросов
+// Основная функция для API запросов - ТОЛЬКО реальные запросы
 async function makeBybitRequest(endpoint: string, params: Record<string, any> = {}) {
-  console.log(`\n🌐 === ЗАПРОС К BYBIT API ===`)
+  console.log(`\n🌐 === РЕАЛЬНЫЙ ЗАПРОС К BYBIT API ===`)
   console.log("📍 Endpoint:", endpoint)
   console.log("📝 Params:", params)
 
-  // Проверяем API ключи
+  // Строгая проверка API ключей
   const keyValidation = validateApiKeys()
   if (!keyValidation.valid) {
     console.log("❌", keyValidation.message)
-    return { success: false, error: keyValidation.message, data: null, isDemo: false }
+    throw new Error(keyValidation.message)
   }
 
-  // Если это демо режим, возвращаем тестовые данные
-  if (keyValidation.isDemo) {
-    console.log("🎭 ДЕМО РЕЖИМ: Возвращаем тестовые данные")
-    return { success: true, error: null, data: getMockData(endpoint), isDemo: true }
-  }
-
-  // Реальный API запрос (только для настоящих ключей)
   try {
     const timestamp = Date.now().toString()
     const recvWindow = "5000"
@@ -114,7 +137,7 @@ async function makeBybitRequest(endpoint: string, params: Record<string, any> = 
     if (!response.ok) {
       const errorText = await response.text()
       console.error("❌ HTTP Error:", response.status, errorText)
-      return { success: false, error: `HTTP ${response.status}: ${errorText}`, data: null, isDemo: false }
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
     }
 
     const data = await response.json()
@@ -124,164 +147,82 @@ async function makeBybitRequest(endpoint: string, params: Record<string, any> = 
 
     if (data.retCode === 0) {
       console.log("✅ Успешный запрос!")
-      return { success: true, error: null, data: data.result, isDemo: false }
+      return { success: true, error: null, data: data.result }
     } else {
       console.error("❌ Bybit API Error:", data.retMsg)
-      return { success: false, error: data.retMsg, data: null, isDemo: false }
+      throw new Error(`Bybit API Error: ${data.retMsg}`)
     }
   } catch (error) {
     console.error("❌ Критическая ошибка запроса:", error)
-    return { success: false, error: error?.toString(), data: null, isDemo: false }
+    throw error
   }
 }
 
-// Функция для генерации тестовых данных
-function getMockData(endpoint: string) {
-  console.log("🎭 Генерируем тестовые данные для:", endpoint)
-
-  if (endpoint.includes("wallet-balance")) {
-    return {
-      coin: [
-        {
-          coin: "USDT",
-          walletBalance: "15420.50",
-          transferBalance: "15420.50",
-          bonus: "0",
-        },
-        {
-          coin: "BTC",
-          walletBalance: "0.25",
-          transferBalance: "0.25",
-          bonus: "0",
-        },
-      ],
-    }
-  }
-
-  if (endpoint.includes("position/list")) {
-    return {
-      list: [
-        {
-          symbol: "BTCUSDT",
-          side: "Buy",
-          size: "0.5",
-          positionValue: "21710.0",
-          entryPrice: "43420.0",
-          markPrice: "43520.5",
-          unrealisedPnl: "50.25",
-          createdTime: (Date.now() - 1800000).toString(),
-        },
-        {
-          symbol: "ETHUSDT",
-          side: "Sell",
-          size: "2.0",
-          positionValue: "5300.0",
-          entryPrice: "2650.0",
-          markPrice: "2634.8",
-          unrealisedPnl: "30.4",
-          createdTime: (Date.now() - 900000).toString(),
-        },
-      ],
-    }
-  }
-
-  if (endpoint.includes("execution/list")) {
-    return {
-      list: [
-        {
-          execId: "demo-trade-1",
-          symbol: "BTCUSDT",
-          side: "Buy",
-          execQty: "0.1",
-          execPrice: "43200.0",
-          execFee: "4.32",
-          execTime: (Date.now() - 3600000).toString(),
-        },
-        {
-          execId: "demo-trade-2",
-          symbol: "ETHUSDT",
-          side: "Sell",
-          execQty: "1.0",
-          execPrice: "2640.0",
-          execFee: "2.64",
-          execTime: (Date.now() - 7200000).toString(),
-        },
-      ],
-    }
-  }
-
-  return null
-}
-
-// Получение баланса
+// Получение баланса - ТОЛЬКО реальные данные
 export async function getBybitBalance() {
-  console.log("\n💰 === ПОЛУЧЕНИЕ БАЛАНСА ===")
+  console.log("\n💰 === ПОЛУЧЕНИЕ РЕАЛЬНОГО БАЛАНСА ===")
 
-  const result = await makeBybitRequest("/v5/account/wallet-balance", {
-    accountType: "UNIFIED",
-  })
+  try {
+    const result = await makeBybitRequest("/v5/account/wallet-balance", {
+      accountType: "UNIFIED",
+    })
 
-  if (result.success) {
-    if (result.isDemo) {
-      console.log("🎭 Баланс получен из демо данных")
-    } else {
-      console.log("✅ Баланс получен с реального API")
-    }
+    console.log("✅ Баланс получен с реального API")
     return result.data
-  } else {
-    console.error("❌ Ошибка получения баланса:", result.error)
-    return null
+  } catch (error) {
+    console.error("❌ Ошибка получения баланса:", error)
+    throw error
   }
 }
 
-// Получение позиций
+// Получение позиций - ИСПРАВЛЕНО с правильными параметрами
 export async function getBybitPositions() {
-  console.log("\n📊 === ПОЛУЧЕНИЕ ПОЗИЦИЙ ===")
+  console.log("\n📊 === ПОЛУЧЕНИЕ РЕАЛЬНЫХ ПОЗИЦИЙ ===")
 
-  const result = await makeBybitRequest("/v5/position/list", {
-    category: "linear",
-  })
+  try {
+    // Сначала получаем все позиции без фильтра по символу
+    const result = await makeBybitRequest("/v5/position/list", {
+      category: "linear",
+      settleCoin: "USDT", // Добавляем обязательный параметр
+    })
 
-  if (result.success) {
     const positions = result.data?.list || []
-    if (result.isDemo) {
-      console.log(`🎭 Позиции получены из демо данных: ${positions.length} шт.`)
-    } else {
-      console.log(`✅ Позиции получены с реального API: ${positions.length} шт.`)
-    }
-    return positions
-  } else {
-    console.error("❌ Ошибка получения позиций:", result.error)
+    console.log(`✅ Позиции получены с реального API: ${positions.length} шт.`)
+
+    // Фильтруем только открытые позиции
+    const openPositions = positions.filter((pos: any) => pos.size && Number.parseFloat(pos.size) > 0)
+
+    console.log(`📊 Открытых позиций: ${openPositions.length} из ${positions.length}`)
+    return openPositions
+  } catch (error) {
+    console.error("❌ Ошибка получения позиций:", error)
+    // Возвращаем пустой массив вместо выброса ошибки
     return []
   }
 }
 
-// Получение сделок
+// Получение сделок - ТОЛЬКО реальные данные
 export async function getBybitTrades() {
-  console.log("\n📈 === ПОЛУЧЕНИЕ СДЕЛОК ===")
+  console.log("\n📈 === ПОЛУЧЕНИЕ РЕАЛЬНЫХ СДЕЛОК ===")
 
-  const result = await makeBybitRequest("/v5/execution/list", {
-    category: "linear",
-    limit: 50,
-  })
+  try {
+    const result = await makeBybitRequest("/v5/execution/list", {
+      category: "linear",
+      limit: 50,
+    })
 
-  if (result.success) {
     const trades = result.data?.list || []
-    if (result.isDemo) {
-      console.log(`🎭 Сделки получены из демо данных: ${trades.length} шт.`)
-    } else {
-      console.log(`✅ Сделки получены с реального API: ${trades.length} шт.`)
-    }
+    console.log(`✅ Сделки получены с реального API: ${trades.length} шт.`)
     return trades
-  } else {
-    console.error("❌ Ошибка получения сделок:", result.error)
+  } catch (error) {
+    console.error("❌ Ошибка получения сделок:", error)
     return []
   }
 }
 
-// Тест подключения с детальной диагностикой
+// Тест подключения - ТОЛЬКО реальное подключение
 export async function testBybitConnection() {
-  console.log("\n🔍 === ТЕСТ ПОДКЛЮЧЕНИЯ ===")
+  console.log("\n🔍 === ТЕСТ РЕАЛЬНОГО ПОДКЛЮЧЕНИЯ ===")
 
   // Проверяем API ключи
   const keyValidation = validateApiKeys()
@@ -321,26 +262,14 @@ export async function testBybitConnection() {
       accountType: "UNIFIED",
     })
 
-    if (balanceResult.success) {
-      return {
-        success: true,
-        message: "✅ Подключение к Bybit API успешно!",
-        details: {
-          publicApi: "OK",
-          privateApi: "OK",
-          balance: balanceResult.data,
-        },
-      }
-    } else {
-      return {
-        success: false,
-        message: `❌ Ошибка приватного API: ${balanceResult.error}`,
-        details: {
-          publicApi: "OK",
-          privateApi: "ERROR",
-          error: balanceResult.error,
-        },
-      }
+    return {
+      success: true,
+      message: "✅ Подключение к Bybit API успешно!",
+      details: {
+        publicApi: "OK",
+        privateApi: "OK",
+        balance: balanceResult.data,
+      },
     }
   } catch (error) {
     console.error("❌ Ошибка теста подключения:", error)
@@ -352,87 +281,7 @@ export async function testBybitConnection() {
   }
 }
 
-// Прямой тест всех эндпоинтов
-export async function directApiTest() {
-  console.log("\n🧪 === ПРЯМОЙ ТЕСТ ВСЕХ ЭНДПОИНТОВ ===")
-
-  const results = {
-    balance: null as any,
-    positions: null as any,
-    trades: null as any,
-    errors: [] as string[],
-    success: false,
-  }
-
-  // Проверяем API ключи сначала
-  const keyValidation = validateApiKeys()
-  if (!keyValidation.valid) {
-    results.errors.push(keyValidation.message)
-    return results
-  }
-
-  // Тест баланса
-  try {
-    console.log("1️⃣ Тестируем баланс...")
-    const balanceResult = await makeBybitRequest("/v5/account/wallet-balance", { accountType: "UNIFIED" })
-
-    if (balanceResult.success) {
-      results.balance = balanceResult.data
-      console.log("✅ Баланс: OK")
-    } else {
-      results.errors.push(`Balance: ${balanceResult.error}`)
-      console.log("❌ Баланс: FAIL")
-    }
-  } catch (error) {
-    results.errors.push(`Balance exception: ${error}`)
-    console.log("❌ Баланс: EXCEPTION")
-  }
-
-  // Тест позиций
-  try {
-    console.log("2️⃣ Тестируем позиции...")
-    const positionsResult = await makeBybitRequest("/v5/position/list", { category: "linear" })
-
-    if (positionsResult.success) {
-      results.positions = positionsResult.data
-      console.log("✅ Позиции: OK")
-    } else {
-      results.errors.push(`Positions: ${positionsResult.error}`)
-      console.log("❌ Позиции: FAIL")
-    }
-  } catch (error) {
-    results.errors.push(`Positions exception: ${error}`)
-    console.log("❌ Позиции: EXCEPTION")
-  }
-
-  // Тест сделок
-  try {
-    console.log("3️⃣ Тестируем сделки...")
-    const tradesResult = await makeBybitRequest("/v5/execution/list", { category: "linear", limit: 10 })
-
-    if (tradesResult.success) {
-      results.trades = tradesResult.data
-      console.log("✅ Сделки: OK")
-    } else {
-      results.errors.push(`Trades: ${tradesResult.error}`)
-      console.log("❌ Сделки: FAIL")
-    }
-  } catch (error) {
-    results.errors.push(`Trades exception: ${error}`)
-    console.log("❌ Сделки: EXCEPTION")
-  }
-
-  results.success = results.errors.length === 0
-
-  console.log("\n📋 === ИТОГИ ПРЯМОГО ТЕСТА ===")
-  console.log("✅ Успешно:", results.success)
-  console.log("❌ Ошибок:", results.errors.length)
-  console.log("📊 Детали:", results.errors)
-
-  return results
-}
-
-// Статус API
+// Статус API - строгая проверка
 export function getApiStatus() {
   const keyValidation = validateApiKeys()
 
@@ -444,8 +293,9 @@ export function getApiStatus() {
     secretPreview: API_SECRET ? `${API_SECRET.substring(0, 8)}...` : null,
     keyLength: API_KEY.length,
     secretLength: API_SECRET.length,
-    source: process.env.BYBIT_API_KEY ? "environment" : "hardcoded",
+    source: process.env.BYBIT_API_KEY ? "environment" : "missing",
     validation: keyValidation,
+    isDemo: false, // Демо режим полностью отключен
   }
 }
 
@@ -456,5 +306,6 @@ export function diagnoseEnvironment() {
     bybitVars: Object.keys(process.env).filter((key) => key.includes("BYBIT")),
     allEnvKeys: Object.keys(process.env).length,
     hasEnvFile: process.env.BYBIT_API_KEY ? "YES" : "NO",
+    demoMode: false, // Демо режим отключен
   }
 }
